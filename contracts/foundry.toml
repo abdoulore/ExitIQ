@@ -1,0 +1,13 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.20"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+
+[rpc_endpoints]
+mantle_mainnet = "https://rpc.mantle.xyz"
+mantle_publicnode = "https://mantle-rpc.publicnode.com"
+mantle_testnet = "https://rpc.testnet.mantle.xyz"

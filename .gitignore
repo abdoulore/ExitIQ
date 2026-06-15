@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+dist
+coverage
+*.log
+tsconfig.tsbuildinfo
+.env
+.env*
+!.env.example
+cache
+broadcast
+.data
+
+# Internal docs: keep only the Supabase schema tracked
+docs/*
+!docs/supabase.sql
