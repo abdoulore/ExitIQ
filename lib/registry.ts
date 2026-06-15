@@ -25,8 +25,11 @@ export const mantleMainnet = defineChain({
 
 export const mantleRegistryChain = mantleMainnet;
 
-export const exitReportRegistryAddress = process.env
-  .NEXT_PUBLIC_EXIT_REPORT_REGISTRY_ADDRESS as Address | undefined;
+export const deployedExitReportRegistryAddress =
+  "0x160493BC227713b256344E382f02d2adbFD0555e" as const;
+
+export const exitReportRegistryAddress = (process.env
+  .NEXT_PUBLIC_EXIT_REPORT_REGISTRY_ADDRESS || deployedExitReportRegistryAddress) as Address;
 
 export const exitReportRegistryAbi = [
   {

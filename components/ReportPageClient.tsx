@@ -124,10 +124,12 @@ export function ReportPageClient({
 
         <div className="mt-6 grid gap-5">
           <ExitScoreCard result={report.result} />
+          {!report.transactionHash ? (
+            <ReportRegistryPanel result={report.result} onReportSaved={handleReportSaved} />
+          ) : null}
           <ReportEvidenceTabs
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            onReportSaved={handleReportSaved}
             report={report}
           />
         </div>
@@ -160,12 +162,10 @@ function ReportSummaryBar({ report }: { report: StoredExitReport }) {
 function ReportEvidenceTabs({
   activeTab,
   onTabChange,
-  onReportSaved,
   report,
 }: {
   activeTab: ReportTab;
   onTabChange: (tab: ReportTab) => void;
-  onReportSaved: (update: ReportTransactionUpdate) => void;
   report: StoredExitReport;
 }) {
   const tabs: Array<{ id: ReportTab; label: string; hint: string }> = [
@@ -219,19 +219,13 @@ function ReportEvidenceTabs({
         ) : null}
         {activeTab === "stress" ? <StressTestPanel stress={report.result.stress} /> : null}
         {activeTab === "compliance" ? <CompliancePanel result={report.result} /> : null}
-        {activeTab === "proof" ? <ReportHashPanel report={report} onReportSaved={onReportSaved} /> : null}
+        {activeTab === "proof" ? <ReportHashPanel report={report} /> : null}
       </div>
     </section>
   );
 }
 
-function ReportHashPanel({
-  report,
-  onReportSaved,
-}: {
-  report: StoredExitReport;
-  onReportSaved: (update: ReportTransactionUpdate) => void;
-}) {
+function ReportHashPanel({ report }: { report: StoredExitReport }) {
   const txLink = report.transactionHash ? getMantleTxUrl(report.transactionHash) : undefined;
 
   return (
@@ -258,10 +252,6 @@ function ReportHashPanel({
           )}
         </div>
       </section>
-
-      {!report.transactionHash ? (
-        <ReportRegistryPanel result={report.result} onReportSaved={onReportSaved} />
-      ) : null}
     </div>
   );
 }

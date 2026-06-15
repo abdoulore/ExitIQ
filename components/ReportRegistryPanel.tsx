@@ -21,7 +21,11 @@ import {
 import type { ReportTransactionUpdate } from "@/lib/reports";
 import type { ExitCheckResult } from "@/lib/scoring";
 
-type BrowserEthereumProvider = Parameters<typeof custom>[0];
+type BrowserEthereumProvider = Parameters<typeof custom>[0] & {
+  isMetaMask?: boolean;
+  providers?: BrowserEthereumProvider[];
+  request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
+};
 type SaveStatus = "idle" | "connecting" | "signing" | "submitted" | "success" | "error";
 
 declare global {
@@ -64,11 +68,11 @@ export function ReportRegistryPanel({
     setError(null);
 
     try {
-      const walletClient = getWalletClient();
-      // Request accounts first so the wallet authorises the site, then switch chain.
-      const addresses = await walletClient.requestAddresses();
+      const provider = getEthereumProvider();
+      // Direct EIP-1193 call is the most reliable way to trigger the wallet popup.
+      const addresses = await requestWalletAddresses(provider);
       setAccount(addresses[0] ?? null);
-      await ensureMantleMainnet(walletClient);
+      await ensureMantleMainnet(provider);
       setStatus("idle");
     } catch (connectError) {
       setStatus("error");
@@ -86,11 +90,11 @@ export function ReportRegistryPanel({
     }
 
     try {
-      const walletClient = getWalletClient();
+      const provider = getEthereumProvider();
 
       // 1) Connect first so the wallet authorises the site (prompts if needed).
       setStatus("connecting");
-      const addresses = await walletClient.requestAddresses();
+      const addresses = await requestWalletAddresses(provider);
       const activeAccount = addresses[0];
 
       if (!activeAccount) {
@@ -100,10 +104,11 @@ export function ReportRegistryPanel({
       setAccount(activeAccount);
 
       // 2) Make sure the wallet is on Mantle mainnet (prompts add/switch if needed).
-      await ensureMantleMainnet(walletClient);
+      await ensureMantleMainnet(provider);
 
       // 3) Sign and send (this is the wallet signature prompt).
       setStatus("signing");
+      const walletClient = getWalletClient(provider);
 
       const hash = createReportHash(result);
       const numericExitScore = gradeToRegistryScore(result.exitScore);
@@ -224,35 +229,95 @@ export function ReportRegistryPanel({
   );
 }
 
-function getWalletClient() {
+function getEthereumProvider() {
   if (!window.ethereum) {
     throw new Error("Browser wallet not found.");
   }
 
+  return window.ethereum.providers?.find((provider) => provider.isMetaMask) ?? window.ethereum;
+}
+
+function getWalletClient(provider: BrowserEthereumProvider) {
   return createWalletClient({
     chain: mantleRegistryChain,
-    transport: custom(window.ethereum),
+    transport: custom(provider),
   });
 }
 
-async function ensureMantleMainnet(walletClient: ReturnType<typeof getWalletClient>) {
-  if ((await walletClient.getChainId()) === mantleRegistryChain.id) {
+async function requestWalletAddresses(provider: BrowserEthereumProvider) {
+  const addresses = await provider.request({ method: "eth_requestAccounts" });
+
+  if (!Array.isArray(addresses)) {
+    return [];
+  }
+
+  return addresses.filter((address): address is Address => typeof address === "string" && isAddress(address));
+}
+
+async function ensureMantleMainnet(provider: BrowserEthereumProvider) {
+  if ((await getWalletChainId(provider)) === mantleRegistryChain.id) {
     return;
   }
 
   try {
-    await walletClient.switchChain({ id: mantleRegistryChain.id });
-  } catch {
-    await walletClient.addChain({ chain: mantleRegistryChain });
-    await walletClient.switchChain({ id: mantleRegistryChain.id });
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: toHexChainId(mantleRegistryChain.id) }],
+    });
+  } catch (switchError) {
+    if (!isMissingChainError(switchError)) {
+      throw switchError;
+    }
+
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId: toHexChainId(mantleRegistryChain.id),
+          chainName: mantleRegistryChain.name,
+          nativeCurrency: mantleRegistryChain.nativeCurrency,
+          rpcUrls: mantleRegistryChain.rpcUrls.default.http,
+          blockExplorerUrls: [mantleRegistryChain.blockExplorers.default.url],
+        },
+      ],
+    });
+
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: toHexChainId(mantleRegistryChain.id) }],
+    });
   }
 
   // Some wallets resolve the switch optimistically without actually changing the
   // active chain. Verify it took effect, otherwise viem throws a chain mismatch
   // before the signature prompt ever appears.
-  if ((await walletClient.getChainId()) !== mantleRegistryChain.id) {
+  if ((await getWalletChainId(provider)) !== mantleRegistryChain.id) {
     throw new Error("Switch your wallet to Mantle mainnet, then try again.");
   }
+}
+
+async function getWalletChainId(provider: BrowserEthereumProvider) {
+  const chainId = await provider.request({ method: "eth_chainId" });
+
+  if (typeof chainId === "string") {
+    return Number.parseInt(chainId, 16);
+  }
+
+  return Number(chainId);
+}
+
+function toHexChainId(chainId: number) {
+  return `0x${chainId.toString(16)}`;
+}
+
+function isMissingChainError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+
+  return code === 4902 || code === -32603;
 }
 
 function InfoTile({ label, value }: { label: string; value: string }) {
