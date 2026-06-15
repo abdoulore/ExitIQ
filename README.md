@@ -6,7 +6,7 @@
 
 ## Links
 
-- Live app URL: `TBD`
+- Live app URL: [exit-iq-zeta.vercel.app](https://exit-iq-zeta.vercel.app/)
 - Contract address: [`0x160493BC227713b256344E382f02d2adbFD0555e`](https://explorer.mantle.xyz/address/0x160493BC227713b256344E382f02d2adbFD0555e) (Mantle mainnet)
 - Demo video link: `TBD`
 - X submission thread: `TBD`

@@ -65,9 +65,10 @@ export function ReportRegistryPanel({
 
     try {
       const walletClient = getWalletClient();
-      await ensureMantleMainnet(walletClient);
+      // Request accounts first so the wallet authorises the site, then switch chain.
       const addresses = await walletClient.requestAddresses();
       setAccount(addresses[0] ?? null);
+      await ensureMantleMainnet(walletClient);
       setStatus("idle");
     } catch (connectError) {
       setStatus("error");
@@ -85,12 +86,11 @@ export function ReportRegistryPanel({
     }
 
     try {
-      setStatus("signing");
-
       const walletClient = getWalletClient();
-      await ensureMantleMainnet(walletClient);
 
-      const addresses = account ? [account] : await walletClient.requestAddresses();
+      // 1) Connect first so the wallet authorises the site (prompts if needed).
+      setStatus("connecting");
+      const addresses = await walletClient.requestAddresses();
       const activeAccount = addresses[0];
 
       if (!activeAccount) {
@@ -98,6 +98,12 @@ export function ReportRegistryPanel({
       }
 
       setAccount(activeAccount);
+
+      // 2) Make sure the wallet is on Mantle mainnet (prompts add/switch if needed).
+      await ensureMantleMainnet(walletClient);
+
+      // 3) Sign and send (this is the wallet signature prompt).
+      setStatus("signing");
 
       const hash = createReportHash(result);
       const numericExitScore = gradeToRegistryScore(result.exitScore);
@@ -230,15 +236,22 @@ function getWalletClient() {
 }
 
 async function ensureMantleMainnet(walletClient: ReturnType<typeof getWalletClient>) {
+  if ((await walletClient.getChainId()) === mantleRegistryChain.id) {
+    return;
+  }
+
   try {
     await walletClient.switchChain({ id: mantleRegistryChain.id });
   } catch {
-    try {
-      await walletClient.addChain({ chain: mantleRegistryChain });
-      await walletClient.switchChain({ id: mantleRegistryChain.id });
-    } catch {
-      throw new Error("Switch wallet to Mantle mainnet to save the report.");
-    }
+    await walletClient.addChain({ chain: mantleRegistryChain });
+    await walletClient.switchChain({ id: mantleRegistryChain.id });
+  }
+
+  // Some wallets resolve the switch optimistically without actually changing the
+  // active chain. Verify it took effect, otherwise viem throws a chain mismatch
+  // before the signature prompt ever appears.
+  if ((await walletClient.getChainId()) !== mantleRegistryChain.id) {
+    throw new Error("Switch your wallet to Mantle mainnet, then try again.");
   }
 }
 
@@ -256,6 +269,15 @@ function shortAddress(address: string) {
 }
 
 function toErrorMessage(error: unknown, fallback: string) {
+  // viem errors carry a concise `shortMessage`; prefer it over the verbose message.
+  if (error && typeof error === "object" && "shortMessage" in error) {
+    const shortMessage = (error as { shortMessage?: unknown }).shortMessage;
+
+    if (typeof shortMessage === "string" && shortMessage.length > 0) {
+      return shortMessage;
+    }
+  }
+
   if (error instanceof Error) {
     return error.message;
   }
